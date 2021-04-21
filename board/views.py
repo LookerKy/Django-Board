@@ -22,20 +22,38 @@ class BoardListView(ListView):
     template_name = 'home.html'
 
 
-def board_topics(request, pk):
-    board_list = get_object_or_404(Board, pk=pk)
-    queryset = board_list.topics.order_by('-last_updated').annotate(replies=Count('posts') - 1)
-    page = request.GET.get('page', 1)
+# FBV
+# def board_topics(request, pk):
+#     board_list = get_object_or_404(Board, pk=pk)
+#     queryset = board_list.topics.order_by('-last_updated').annotate(replies=Count('posts') - 1)
+#     page = request.GET.get('page', 1)
+#
+#     paginator = Paginator(queryset, 20)
+#     try:
+#         topics = paginator.page(page)
+#     except PageNotAnInteger:
+#         topics = paginator.page(1)
+#     except EmptyPage:
+#         topics = paginator.page(paginator.num_pages)
+#
+#     return render(request, 'topics.html', {'board': board_list, 'topics': topics})
 
-    paginator = Paginator(queryset, 20)
-    try:
-        topics = paginator.page(page)
-    except PageNotAnInteger:
-        topics = paginator.page(1)
-    except EmptyPage:
-        topics = paginator.page(paginator.num_pages)
+# GCBV
+class TopicListView(ListView):
+    model = Topic
+    context_object_name = 'topics'
+    template_name = 'topics.html'
+    paginate_by = 20
 
-    return render(request, 'topics.html', {'board': board_list, 'topics': topics})
+    def get_context_data(self, **kwargs):
+        kwargs['board'] = self.board
+        return super().get_context_data(**kwargs)
+
+    def get_queryset(self):
+        self.board = get_object_or_404(Board, pk=self.kwargs.get('pk'))
+        queryset = self.board.topics.order_by('-last_updated').annotate(replies=Count('posts') - 1)
+        print(queryset)
+        return queryset
 
 
 @login_required(login_url='/login/')
@@ -62,11 +80,32 @@ def new_topic(request, pk):
     return render(request, 'new_topic.html', {'board': board, 'form': form})
 
 
-def topic_posts(request, pk, topic_pk):
-    topic = get_object_or_404(Topic, board__pk=pk, pk=topic_pk)
-    topic.views += 1
-    topic.save()
-    return render(request, 'topic_posts.html', {'topic': topic})
+# def topic_posts(request, pk, topic_pk):
+#     topic = get_object_or_404(Topic, board__pk=pk, pk=topic_pk)
+#     topic.views += 1
+#     topic.save()
+#     return render(request, 'topic_posts.html', {'topic': topic})
+
+
+class PostListView(ListView):
+    model = Post
+    context_object_name = 'posts'
+    template_name = 'topic_posts.html'
+    paginate_by = 2
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        self.topic.views += 1
+        self.topic.save()
+        # res에 topic 할당
+        kwargs['topic'] = self.topic
+        return super().get_context_data(**kwargs)
+
+    def get_queryset(self):
+        # topic 선언
+        self.topic = get_object_or_404(Topic, board__pk=self.kwargs.get('pk'), pk=self.kwargs.get('topic_pk'))
+        # context_object_name 에 res 되는 내용 이걸 설정 안하면 model.objects.all()이 됨
+        queryset = self.topic.posts.order_by('created_by')
+        return queryset
 
 
 @login_required(login_url='/login/')
@@ -86,7 +125,7 @@ def reply_topic(request, pk, topic_pk):
     return render(request, 'reply_topic.html', {'topic': topic, 'form': form})
 
 
-@method_decorator(login_required, name='dispatch')
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
 class PostUpdateView(UpdateView):
     model = Post
     fields = ['message', ]
